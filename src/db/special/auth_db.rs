@@ -68,7 +68,7 @@ impl AuthDatabase {
     pub async fn get_user_by_hashed(
         &self,
         hashed: String,
-    ) -> DefaultReturn<Option<FullUser<String>>> {
+    ) -> DefaultReturn<Option<FullUser<String>>> {        
         // fetch from database
         let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
             "SELECT * FROM \"Users\" WHERE \"id_hashed\" = ?"

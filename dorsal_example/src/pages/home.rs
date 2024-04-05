@@ -15,10 +15,10 @@ struct HomeTemplate {
 #[get("/")]
 pub async fn home_request(req: HttpRequest, data: web::Data<crate::db::AppData>) -> impl Responder {
     // verify auth status
-    let (set_cookie, _, _) = base::check_auth_status(req, data).await;
+    let (set_cookie, _, token_user) = base::check_auth_status(req, data).await;
 
     // ...
-    let base = base::get_base_values(false);
+    let base = base::get_base_values(token_user.is_some());
     return HttpResponse::Ok()
         .append_header(("Set-Cookie", set_cookie))
         .append_header(("Content-Type", "text/html"))
