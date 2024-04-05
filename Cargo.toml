@@ -1,11 +1,17 @@
 workspace = { members = ["dorsal_example"] }
 [package]
 name = "dorsal"
+description = "Backbone server structure of Stellular projects"
 authors = ["hkau"]
 license = "MIT"
+homepage = "https://code.stellular.org/stellular/dorsal"
+repository = "https://code.stellular.org/stellular/dorsal"
+documentation = "https://code.stellular.org/stellular/dorsal"
 
 version = "0.1.0"
 edition = "2021"
+
+exclude = ["dorsal_example/**/*"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -13,7 +19,7 @@ edition = "2021"
 postgres = []
 mysql = []
 sqlite = []
-default = []
+default = ["sqlite"]
 
 [dependencies]
 hex_fmt = "0.3.0"

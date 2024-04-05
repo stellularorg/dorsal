@@ -2,7 +2,7 @@
 //! Database handler for all database types
 use super::{
     cachedb::CacheDB,
-    sql::{self, Database, DatabaseOpts},
+    sql::{create_db, Database, DatabaseOpts},
 };
 
 use serde::{Deserialize, Serialize};
@@ -49,11 +49,11 @@ pub struct StarterDatabase {
 
 impl StarterDatabase {
     pub async fn new(options: DatabaseOpts) -> StarterDatabase {
-        return StarterDatabase {
-            db: sql::create_db(options.clone()).await,
+        StarterDatabase {
+            db: create_db(options.clone()).await,
             options,
             cachedb: CacheDB::new().await,
-        };
+        }
     }
 
     #[cfg(feature = "sqlite")]
