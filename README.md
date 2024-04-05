@@ -12,9 +12,13 @@ The Dorsal example also includes support for the user authentication base that i
 You can clone only the `dorsal_example/` directory with the command below:
 
 ```bash
-PROJECT_NAME="dorsal_example" \
-git clone -n --depth=1 --filter=tree:0 https://code.stellular.org/stellular/dorsal $PROJECT_NAME \
-cd $PROJECT_NAME \
-git sparse-checkout set --no-cone dorsal_example \
-git checkout
+PROJECT_NAME="dorsal_example" &&
+git clone --depth=1 https://code.stellular.org/stellular/dorsal $PROJECT_NAME &&
+cd $PROJECT_NAME &&
+git sparse-checkout set --no-cone dorsal_example &&
+mv dorsal_example ../tmpdex &&
+cd ../ &&
+sudo rm -r $PROJECT_NAME &&
+mv ./tmpdex $PROJECT_NAME &&
+cd $PROJECT_NAME
 ```
