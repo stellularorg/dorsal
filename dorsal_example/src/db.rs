@@ -1,4 +1,4 @@
-use dorsal::query;
+use dorsal::query as sqlquery;
 
 #[derive(Clone)]
 pub struct AppData {
@@ -28,9 +28,33 @@ impl Database {
     pub async fn init(&self) {
         let c = &self.base.db.client;
 
-        let _ = query(
+        let _ = sqlquery(
             "CREATE TABLE IF NOT EXISTS \"ExampleTable\" (
                 name VARCHAR(1000000)
+            )",
+        )
+        .execute(c)
+        .await;
+
+        // users and logs tables
+        let _ = sqlquery(
+            "CREATE TABLE IF NOT EXISTS \"Users\" (
+                username VARCHAR(1000000),
+                id_hashed VARCHAR(1000000),
+                role VARCHAR(1000000),
+                timestamp VARCHAR(1000000),
+                metadata VARCHAR(1000000)
+            )",
+        )
+        .execute(c)
+        .await;
+
+        let _ = sqlquery(
+            "CREATE TABLE IF NOT EXISTS \"Logs\" (
+                id VARCHAR(1000000),
+                logtype VARCHAR(1000000),
+                timestamp  VARCHAR(1000000),
+                content VARCHAR(1000000)
             )",
         )
         .execute(c)
