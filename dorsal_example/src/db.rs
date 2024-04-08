@@ -11,6 +11,7 @@ pub struct AppData {
 pub struct Database {
     pub base: dorsal::StarterDatabase,
     pub auth: dorsal::AuthDatabase,
+    pub logs: dorsal::LogDatabase,
 }
 
 impl Database {
@@ -19,7 +20,8 @@ impl Database {
 
         Database {
             base: db.clone(),
-            auth: dorsal::AuthDatabase { base: db },
+            auth: dorsal::AuthDatabase { base: db.clone() },
+            logs: dorsal::LogDatabase { base: db },
         }
     }
 

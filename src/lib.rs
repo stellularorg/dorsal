@@ -13,6 +13,7 @@ pub mod utility;
 pub use db::cachedb::CacheDB;
 pub use db::db::{DefaultReturn, StarterDatabase};
 pub use db::special::auth_db::AuthDatabase;
+pub use db::special::log_db::LogDatabase;
 pub use db::sql::DatabaseOpts;
 
 pub use sqlx::query;
