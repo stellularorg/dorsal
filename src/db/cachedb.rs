@@ -109,4 +109,38 @@ impl CacheDB {
         // return
         true
     }
+
+    /// Increment a cache object by its identifier
+    ///
+    /// # Arguments:
+    /// * `id` - `String` of the object's id
+    pub async fn incr(&self, id: String) -> bool {
+        // remove
+        let mut c = self.get_con().await;
+        let res: Result<String, redis::RedisError> = c.incr(id, 1);
+
+        if res.is_err() {
+            return false;
+        }
+
+        // return
+        true
+    }
+
+    /// Decrement a cache object by its identifier
+    ///
+    /// # Arguments:
+    /// * `id` - `String` of the object's id
+    pub async fn decr(&self, id: String) -> bool {
+        // remove
+        let mut c = self.get_con().await;
+        let res: Result<String, redis::RedisError> = c.decr(id, 1);
+
+        if res.is_err() {
+            return false;
+        }
+
+        // return
+        true
+    }
 }

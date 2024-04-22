@@ -8,7 +8,7 @@ homepage = "https://code.stellular.org/stellular/dorsal"
 repository = "https://code.stellular.org/stellular/dorsal"
 documentation = "https://code.stellular.org/stellular/dorsal"
 
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 
 exclude = ["dorsal_example/**/*"]
