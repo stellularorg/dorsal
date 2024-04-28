@@ -12,16 +12,25 @@ pub struct Database {
     pub base: dorsal::StarterDatabase,
     pub auth: dorsal::AuthDatabase,
     pub logs: dorsal::LogDatabase,
+    pub notifications: dorsal::NotificationDatabase,
 }
 
 impl Database {
     pub async fn new(opts: dorsal::DatabaseOpts) -> Database {
         let db = dorsal::StarterDatabase::new(opts).await;
 
+        let auth = dorsal::AuthDatabase { base: db.clone() };
+        let logs = dorsal::LogDatabase { base: db.clone() };
+
         Database {
             base: db.clone(),
-            auth: dorsal::AuthDatabase { base: db.clone() },
-            logs: dorsal::LogDatabase { base: db },
+            auth: auth.clone(),
+            logs: logs.clone(),
+            notifications: dorsal::NotificationDatabase {
+                base: db,
+                auth,
+                logs,
+            },
         }
     }
 
