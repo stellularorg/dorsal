@@ -42,9 +42,8 @@ pub struct UserMetadata {
     pub about: String,
     pub avatar_url: Option<String>,
     pub secondary_token: Option<String>,
-    pub allow_mail: Option<String>,    // yes/no
-    pub nickname: Option<String>,      // user display name
-    pub page_template: Option<String>, // profile handlebars template
+    pub allow_mail: Option<String>, // yes/no
+    pub nickname: Option<String>,   // user display name
 }
 
 // database
@@ -68,7 +67,7 @@ impl AuthDatabase {
     pub async fn get_user_by_hashed(
         &self,
         hashed: String,
-    ) -> DefaultReturn<Option<FullUser<String>>> {        
+    ) -> DefaultReturn<Option<FullUser<String>>> {
         // fetch from database
         let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
             "SELECT * FROM \"Users\" WHERE \"id_hashed\" = ?"

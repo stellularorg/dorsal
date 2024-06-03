@@ -1,2 +1,2 @@
 publish:
-    cargo publish --registry=stellular --allow-dirty
+    cargo publish --allow-dirty
