@@ -1,7 +1,6 @@
+use super::log_db::Log;
 use crate::{AuthDatabase, DefaultReturn, LogDatabase, StarterDatabase};
 use serde::{Deserialize, Serialize};
-
-use super::{auth_db::FullUser, log_db::Log};
 
 #[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Notification {
@@ -139,16 +138,16 @@ impl NotificationDatabase {
         let p: &mut Notification = props; // borrowed props
 
         // make sure user exists
-        let existing: DefaultReturn<Option<FullUser<String>>> =
-            self.auth.get_user_by_username(p.user.to_owned()).await;
-
-        if !existing.success {
-            return DefaultReturn {
-                success: false,
-                message: String::from("User does not exist!"),
-                payload: Option::None,
-            };
-        }
+        match self.auth.get_user_by_username(p.user.to_owned()).await {
+            Ok(ua) => ua,
+            Err(err) => {
+                return DefaultReturn {
+                    success: false,
+                    message: err.to_string(),
+                    payload: Option::None,
+                }
+            }
+        };
 
         // return
         self.logs

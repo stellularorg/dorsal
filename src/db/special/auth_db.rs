@@ -1,6 +1,5 @@
+use crate::{utility, StarterDatabase};
 use serde::{Deserialize, Serialize};
-
-use crate::{utility, DefaultReturn, StarterDatabase};
 
 // guppy authentication structs
 #[derive(Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
@@ -19,10 +18,12 @@ pub struct UserState<M> {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RoleLevel {
-    pub elevation: i32, // this marks the level of the role, 0 should always be member
-    // users cannot manage users of a higher elevation than them
-    pub name: String,             // role name, shown on user profiles
-    pub permissions: Vec<String>, // a vec of user permissions (ex: "ManagePastes")
+    /// Marks the level of the role, 0 should always be member
+    pub elevation: i32,
+    /// Role name, shown on user profiles
+    pub name: String,
+    /// A list of user permissions (ex: "ManagePastes")
+    pub permissions: Vec<String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
@@ -31,19 +32,58 @@ pub struct FullUser<M> {
     pub level: RoleLevel,
 }
 
-#[derive(Default, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct RoleLevelLog {
     pub id: String,
     pub level: RoleLevel,
 }
 
+impl Default for RoleLevelLog {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            level: RoleLevel {
+                name: String::from("member"),
+                elevation: 0,
+                permissions: Vec::new(),
+            },
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UserMetadata {
+    /// User's "about" section (markdown supported)
     pub about: String,
+    /// URL of the user's avatar
     pub avatar_url: Option<String>,
+    /// Secondary token that the user can login with
     pub secondary_token: Option<String>,
-    pub allow_mail: Option<String>, // yes/no
-    pub nickname: Option<String>,   // user display name
+    /// User display name
+    pub nickname: Option<String>,
+    // pub permissions: Vec<String>,
+}
+
+// ...
+pub type Result<T> = std::result::Result<T, AuthError>;
+
+pub enum AuthError {
+    ValueError,
+    NotFound,
+    Banned,
+    Other,
+}
+
+impl AuthError {
+    pub fn to_string(&self) -> String {
+        use AuthError::*;
+        match self {
+            ValueError => String::from("One of the field values given is invalid."),
+            NotFound => String::from("User could not be found."),
+            Banned => String::from("User is banned."),
+            _ => String::from("An unspecified error has occured."),
+        }
+    }
 }
 
 // database
@@ -64,10 +104,7 @@ impl AuthDatabase {
     ///
     /// # Arguments:
     /// * `hashed` - `String` of the user's hashed ID
-    pub async fn get_user_by_hashed(
-        &self,
-        hashed: String,
-    ) -> DefaultReturn<Option<FullUser<String>>> {
+    pub async fn get_user_by_hashed(&self, hashed: String) -> Result<FullUser<UserMetadata>> {
         // fetch from database
         let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
             "SELECT * FROM \"Users\" WHERE \"id_hashed\" = ?"
@@ -76,43 +113,31 @@ impl AuthDatabase {
         };
 
         let c = &self.base.db.client;
-        let res = sqlx::query(query)
+        let row = match sqlx::query(query)
             .bind::<&String>(&hashed)
             .fetch_one(c)
-            .await;
-
-        if res.is_err() {
-            return DefaultReturn {
-                success: false,
-                message: String::from("User does not exist"),
-                payload: Option::None,
-            };
-        }
+            .await
+        {
+            Ok(u) => self.base.textify_row(u).data,
+            Err(_) => return Err(AuthError::NotFound),
+        };
 
         // ...
-        let row = res.unwrap();
-        let row = self.base.textify_row(row).data;
-
         let role = row.get("role").unwrap().to_string();
+
         if role == "banned" {
-            return DefaultReturn {
-                success: false,
-                message: String::from("User is banned"),
-                payload: Option::None,
-            };
+            return Err(AuthError::Banned);
         }
 
         // ...
-        let meta = row.get("metadata"); // for compatability - users did not have metadata until Bundlrs v0.10.6
         let user = UserState {
             username: row.get("username").unwrap().to_string(),
             id_hashed: row.get("id_hashed").unwrap().to_string(),
             role: role.clone(),
             timestamp: row.get("timestamp").unwrap().parse::<u128>().unwrap(),
-            metadata: if meta.is_some() {
-                meta.unwrap().to_string()
-            } else {
-                String::new()
+            metadata: match serde_json::from_str(row.get("metadata").unwrap()) {
+                Ok(m) => m,
+                Err(_) => return Err(AuthError::Banned),
             },
         };
 
@@ -120,36 +145,24 @@ impl AuthDatabase {
         let level = self.get_level_by_role(role).await;
 
         // return
-        return DefaultReturn {
-            success: true,
-            message: String::from("User exists"),
-            payload: Option::Some(FullUser {
-                user,
-                level: level.payload.level,
-            }),
-        };
+        Ok(FullUser {
+            user,
+            level: level.level,
+        })
     }
 
     /// Get a user by their unhashed ID (hashes ID and then calls [`PawsDB::get_user_by_hashed()`])
     ///
-    /// Calls [`PawsDB::get_user_by_unhashed_st()`] if user is invalid.
-    ///
     /// # Arguments:
     /// * `unhashed` - `String` of the user's unhashed ID
-    pub async fn get_user_by_unhashed(
-        &self,
-        unhashed: String,
-    ) -> DefaultReturn<Option<FullUser<String>>> {
-        let res = self
+    pub async fn get_user_by_unhashed(&self, unhashed: String) -> Result<FullUser<UserMetadata>> {
+        match self
             .get_user_by_hashed(utility::hash(unhashed.clone()))
-            .await;
-
-        if res.success == false {
-            // treat unhashed as a secondary token and try again
-            return self.get_user_by_unhashed_st(unhashed).await;
+            .await
+        {
+            Ok(r) => Ok(r),
+            Err(_) => self.get_user_by_unhashed_st(unhashed).await,
         }
-
-        res
     }
 
     /// Get a user by their unhashed secondary token
@@ -159,7 +172,7 @@ impl AuthDatabase {
     pub async fn get_user_by_unhashed_st(
         &self,
         unhashed: String,
-    ) -> DefaultReturn<Option<FullUser<String>>> {
+    ) -> Result<FullUser<UserMetadata>> {
         // fetch from database
         let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
             "SELECT * FROM \"Users\" WHERE \"metadata\" LIKE ?"
@@ -168,46 +181,34 @@ impl AuthDatabase {
         };
 
         let c = &self.base.db.client;
-        let res = sqlx::query(query)
+        let row = match sqlx::query(query)
             .bind::<&String>(&format!(
                 "%\"secondary_token\":\"{}\"%",
                 crate::utility::hash(unhashed)
             ))
             .fetch_one(c)
-            .await;
-
-        if res.is_err() {
-            return DefaultReturn {
-                success: false,
-                message: String::from("User does not exist"),
-                payload: Option::None,
-            };
-        }
+            .await
+        {
+            Ok(r) => self.base.textify_row(r).data,
+            Err(_) => return Err(AuthError::NotFound),
+        };
 
         // ...
-        let row = res.unwrap();
-        let row = self.base.textify_row(row).data;
-
         let role = row.get("role").unwrap().to_string();
+
         if role == "banned" {
-            return DefaultReturn {
-                success: false,
-                message: String::from("User is banned"),
-                payload: Option::None,
-            };
+            return Err(AuthError::Banned);
         }
 
         // ...
-        let meta = row.get("metadata"); // for compatability - users did not have metadata until Bundlrs v0.10.6
         let user = UserState {
             username: row.get("username").unwrap().to_string(),
             id_hashed: row.get("id_hashed").unwrap().to_string(),
             role: role.clone(),
             timestamp: row.get("timestamp").unwrap().parse::<u128>().unwrap(),
-            metadata: if meta.is_some() {
-                meta.unwrap().to_string()
-            } else {
-                String::new()
+            metadata: match serde_json::from_str(row.get("metadata").unwrap()) {
+                Ok(m) => m,
+                Err(_) => return Err(AuthError::ValueError),
             },
         };
 
@@ -215,54 +216,41 @@ impl AuthDatabase {
         let level = self.get_level_by_role(role).await;
 
         // return
-        return DefaultReturn {
-            success: true,
-            message: String::from("User exists"),
-            payload: Option::Some(FullUser {
-                user,
-                level: level.payload.level,
-            }),
-        };
+        Ok(FullUser {
+            user,
+            level: level.level,
+        })
     }
 
     /// Get a user by their username
     ///
     /// # Arguments:
     /// * `username` - `String` of the user's username
-    pub async fn get_user_by_username(
-        &self,
-        username: String,
-    ) -> DefaultReturn<Option<FullUser<String>>> {
+    pub async fn get_user_by_username(&self, username: String) -> Result<FullUser<UserMetadata>> {
         // check in cache
         let cached = self.base.cachedb.get(format!("user:{}", username)).await;
 
         if cached.is_some() {
             // ...
-            let user = serde_json::from_str::<UserState<String>>(cached.unwrap().as_str()).unwrap();
+            let user =
+                serde_json::from_str::<UserState<UserMetadata>>(cached.unwrap().as_str()).unwrap();
 
             // get role
             let role = user.role.clone();
+
             if role == "banned" {
                 // account banned - we're going to act like it simply does not exist
-                return DefaultReturn {
-                    success: false,
-                    message: String::from("User is banned"),
-                    payload: Option::None,
-                };
+                return Err(AuthError::Banned);
             }
 
             // fetch level from role
             let level = self.get_level_by_role(role.clone()).await;
 
             // ...
-            return DefaultReturn {
-                success: true,
-                message: String::from("User exists (cache)"),
-                payload: Option::Some(FullUser {
-                    user,
-                    level: level.payload.level,
-                }),
-            };
+            return Ok(FullUser {
+                user,
+                level: level.level,
+            });
         }
 
         // ...
@@ -273,47 +261,34 @@ impl AuthDatabase {
         };
 
         let c = &self.base.db.client;
-        let res = sqlx::query(query)
+        let row = match sqlx::query(query)
             .bind::<&String>(&username)
             .fetch_one(c)
-            .await;
-
-        if res.is_err() {
-            return DefaultReturn {
-                success: false,
-                message: String::from("User does not exist"),
-                payload: Option::None,
-            };
-        }
+            .await
+        {
+            Ok(r) => self.base.textify_row(r).data,
+            Err(_) => return Err(AuthError::NotFound),
+        };
 
         // ...
-        let row = res.unwrap();
-        let row = self.base.textify_row(row).data;
-
         let role = row.get("role").unwrap().to_string();
+
         if role == "banned" {
-            // account banned - we're going to act like it simply does not exist
-            return DefaultReturn {
-                success: false,
-                message: String::from("User is banned"),
-                payload: Option::None,
-            };
+            return Err(AuthError::NotFound);
         }
 
         // fetch level from role
         let level = self.get_level_by_role(role.clone()).await;
 
         // store in cache
-        let meta = row.get("metadata");
         let user = UserState {
             username: row.get("username").unwrap().to_string(),
             id_hashed: row.get("id_hashed").unwrap().to_string(),
             role,
             timestamp: row.get("timestamp").unwrap().parse::<u128>().unwrap(),
-            metadata: if meta.is_some() {
-                meta.unwrap().to_string()
-            } else {
-                String::new()
+            metadata: match serde_json::from_str(row.get("metadata").unwrap()) {
+                Ok(m) => m,
+                Err(_) => return Err(AuthError::ValueError),
             },
         };
 
@@ -321,35 +296,27 @@ impl AuthDatabase {
             .cachedb
             .set(
                 format!("user:{}", username),
-                serde_json::to_string::<UserState<String>>(&user).unwrap(),
+                serde_json::to_string::<UserState<UserMetadata>>(&user).unwrap(),
             )
             .await;
 
         // return
-        return DefaultReturn {
-            success: true,
-            message: String::from("User exists (new)"),
-            payload: Option::Some(FullUser {
-                user,
-                level: level.payload.level,
-            }),
-        };
+        Ok(FullUser {
+            user,
+            level: level.level,
+        })
     }
 
     /// Get a [`RoleLevel`] by its `name`
     ///
     /// # Arguments:
     /// * `name` - `String` of the level's role name
-    pub async fn get_level_by_role(&self, name: String) -> DefaultReturn<RoleLevelLog> {
+    pub async fn get_level_by_role(&self, name: String) -> RoleLevelLog {
         // check if level already exists in cache
         let cached = self.base.cachedb.get(format!("level:{}", name)).await;
 
         if cached.is_some() {
-            return DefaultReturn {
-                success: true,
-                message: String::from("Level exists (cache)"),
-                payload: serde_json::from_str::<RoleLevelLog>(cached.unwrap().as_str()).unwrap(),
-            };
+            return serde_json::from_str::<RoleLevelLog>(cached.unwrap().as_str()).unwrap();
         }
 
         // ...
@@ -360,29 +327,17 @@ impl AuthDatabase {
         };
 
         let c = &self.base.db.client;
-        let res = sqlx::query(query)
+        let row = match sqlx::query(query)
             .bind::<&String>(&format!("%\"name\":\"{}\"%", name))
             .fetch_one(c)
-            .await;
-
-        if res.is_err() {
-            return DefaultReturn {
-                success: true,
-                message: String::from("Level does not exist, using default"),
-                payload: RoleLevelLog {
-                    id: String::new(),
-                    level: RoleLevel {
-                        name: String::from("member"),
-                        elevation: 0,
-                        permissions: Vec::new(),
-                    },
-                },
-            };
-        }
-
-        // ...
-        let row = res.unwrap();
-        let row = self.base.textify_row(row).data;
+            .await
+        {
+            Ok(r) => self.base.textify_row(r).data,
+            Err(_) => {
+                // return default if not found
+                return RoleLevelLog::default();
+            }
+        };
 
         // store in cache
         let id = row.get("id").unwrap().to_string();
@@ -398,10 +353,6 @@ impl AuthDatabase {
             .await;
 
         // return
-        return DefaultReturn {
-            success: true,
-            message: String::from("Level exists (new)"),
-            payload: level,
-        };
+        return level;
     }
 }
