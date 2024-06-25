@@ -1,4 +1,4 @@
-use crate::{utility, StarterDatabase};
+use crate::{utility, DefaultReturn, StarterDatabase};
 use serde::{Deserialize, Serialize};
 
 // guppy authentication structs
@@ -65,8 +65,8 @@ pub struct UserMetadata {
 }
 
 // ...
-pub type Result<T> = std::result::Result<T, AuthError>;
-
+/// Auth database errors
+#[derive(Debug)]
 pub enum AuthError {
     ValueError,
     NotFound,
@@ -85,6 +85,18 @@ impl AuthError {
         }
     }
 }
+
+impl<T: Default> Into<DefaultReturn<T>> for AuthError {
+    fn into(self) -> DefaultReturn<T> {
+        DefaultReturn {
+            success: false,
+            message: self.to_string(),
+            payload: T::default(),
+        }
+    }
+}
+
+pub type Result<T> = std::result::Result<T, AuthError>;
 
 // database
 #[derive(Clone)]

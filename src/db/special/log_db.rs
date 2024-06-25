@@ -17,6 +17,38 @@ pub struct LogIdentifier {
     pub id: String,
 }
 
+// ...
+/// Log database errors
+#[derive(Debug)]
+pub enum LogError {
+    ValueError,
+    NotFound,
+    Other,
+}
+
+impl LogError {
+    pub fn to_string(&self) -> String {
+        use LogError::*;
+        match self {
+            ValueError => String::from("One of the field values given is invalid."),
+            NotFound => String::from("No asset with this selector could be found."),
+            _ => String::from("An unspecified error has occured"),
+        }
+    }
+}
+
+impl<T: Default> Into<DefaultReturn<T>> for LogError {
+    fn into(self) -> DefaultReturn<T> {
+        DefaultReturn {
+            success: false,
+            message: self.to_string(),
+            payload: T::default(),
+        }
+    }
+}
+
+pub type Result<T> = std::result::Result<T, LogError>;
+
 // database
 #[derive(Clone)]
 pub struct LogDatabase {
@@ -35,7 +67,7 @@ impl LogDatabase {
     ///
     /// # Arguments:
     /// * `id` - `String` of the log's `id`
-    pub async fn get_log_by_id(&self, id: String) -> DefaultReturn<Option<Log>> {
+    pub async fn get_log_by_id(&self, id: String) -> Result<Log> {
         // check in cache
         let cached = self.base.cachedb.get(format!("log:{}", id)).await;
 
@@ -44,11 +76,7 @@ impl LogDatabase {
             let log = serde_json::from_str::<Log>(cached.unwrap().as_str()).unwrap();
 
             // return
-            return DefaultReturn {
-                success: true,
-                message: String::from("Log exists (cache)"),
-                payload: Option::Some(log),
-            };
+            return Ok(log);
         }
 
         // ...
@@ -59,19 +87,10 @@ impl LogDatabase {
         };
 
         let c = &self.base.db.client;
-        let res = sqlx::query(query).bind::<&String>(&id).fetch_one(c).await;
-
-        if res.is_err() {
-            return DefaultReturn {
-                success: false,
-                message: String::from("Log does not exist"),
-                payload: Option::None,
-            };
-        }
-
-        // ...
-        let row = res.unwrap();
-        let row = self.base.textify_row(row).data;
+        let row = match sqlx::query(query).bind::<&String>(&id).fetch_one(c).await {
+            Ok(r) => self.base.textify_row(r).data,
+            Err(_) => return Err(LogError::Other),
+        };
 
         // store in cache
         let log = Log {
@@ -90,11 +109,7 @@ impl LogDatabase {
             .await;
 
         // return
-        return DefaultReturn {
-            success: true,
-            message: String::from("Paste exists"),
-            payload: Option::Some(log),
-        };
+        return Ok(log);
     }
 
     // SET
@@ -103,11 +118,7 @@ impl LogDatabase {
     /// # Arguments:
     /// * `logtype` - `String` of the log's `logtype`
     /// * `content` - `String` of the log's `content`
-    pub async fn create_log(
-        &self,
-        logtype: String,
-        content: String,
-    ) -> DefaultReturn<Option<String>> {
+    pub async fn create_log(&self, logtype: String, content: String) -> Result<()> {
         let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
             "INSERT INTO \"Logs\" VALUES (?, ?, ?, ?)"
         } else {
@@ -117,27 +128,16 @@ impl LogDatabase {
         let log_id: String = utility::random_id();
 
         let c = &self.base.db.client;
-        let res = sqlx::query(query)
+        match sqlx::query(query)
             .bind::<&String>(&log_id)
             .bind::<String>(logtype)
             .bind::<String>(utility::unix_epoch_timestamp().to_string())
             .bind::<String>(content)
             .execute(c)
-            .await;
-
-        if res.is_err() {
-            return DefaultReturn {
-                success: false,
-                message: String::from(res.err().unwrap().to_string()),
-                payload: Option::None,
-            };
-        }
-
-        // return
-        return DefaultReturn {
-            success: true,
-            message: String::from("Log created!"),
-            payload: Option::Some(log_id),
+            .await
+        {
+            Ok(_) => return Ok(()),
+            Err(_) => return Err(LogError::Other),
         };
     }
 
@@ -146,15 +146,10 @@ impl LogDatabase {
     /// # Arguments:
     /// * `id` - `String` of the log's `id`
     /// * `content` - `String` of the log's new content
-    pub async fn edit_log(&self, id: String, content: String) -> DefaultReturn<Option<String>> {
+    pub async fn edit_log(&self, id: String, content: String) -> Result<()> {
         // make sure log exists
-        let existing = &self.get_log_by_id(id.clone()).await;
-        if !existing.success {
-            return DefaultReturn {
-                success: false,
-                message: String::from("Log does not exist!"),
-                payload: Option::None,
-            };
+        if let Err(e) = self.get_log_by_id(id.clone()).await {
+            return Err(e);
         }
 
         // update log
@@ -165,60 +160,32 @@ impl LogDatabase {
         };
 
         let c = &self.base.db.client;
-        let res = sqlx::query(query)
+        match sqlx::query(query)
             .bind::<&String>(&content)
             .bind::<&String>(&id)
             .execute(c)
-            .await;
+            .await
+        {
+            Ok(_) => {
+                // update cache
+                self.base.cachedb.remove(format!("log:{}", id)).await;
 
-        if res.is_err() {
-            return DefaultReturn {
-                success: false,
-                message: String::from(res.err().unwrap().to_string()),
-                payload: Option::None,
-            };
+                // return
+                Ok(())
+            }
+            Err(_) => Err(LogError::Other),
         }
-
-        // update cache
-        let existing_in_cache = self.base.cachedb.get(format!("log:{}", id)).await;
-
-        if existing_in_cache.is_some() {
-            let mut log = serde_json::from_str::<Log>(&existing_in_cache.unwrap()).unwrap();
-
-            log.content = content; // update content
-
-            // update cache
-            self.base
-                .cachedb
-                .update(
-                    format!("log:{}", id),
-                    serde_json::to_string::<Log>(&log).unwrap(),
-                )
-                .await;
-        }
-
-        // return
-        return DefaultReturn {
-            success: true,
-            message: String::from("Log updated!"),
-            payload: Option::Some(id),
-        };
     }
 
     /// Delete a log given its id
     ///
     /// # Arguments:
     /// * `id` - `String` of the log's `id`
-    pub async fn delete_log(&self, id: String) -> DefaultReturn<Option<String>> {
+    pub async fn delete_log(&self, id: String) -> Result<()> {
         // make sure log exists
-        let existing = &self.get_log_by_id(id.clone()).await;
-        if !existing.success {
-            return DefaultReturn {
-                success: false,
-                message: String::from("Log does not exist!"),
-                payload: Option::None,
-            };
-        }
+        if let Err(e) = self.get_log_by_id(id.clone()).await {
+            return Err(e);
+        };
 
         // update log
         let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
@@ -228,24 +195,15 @@ impl LogDatabase {
         };
 
         let c = &self.base.db.client;
-        let res = sqlx::query(query).bind::<&String>(&id).execute(c).await;
+        match sqlx::query(query).bind::<&String>(&id).execute(c).await {
+            Ok(_) => {
+                // update cache
+                self.base.cachedb.remove(format!("log:{}", id)).await;
 
-        if res.is_err() {
-            return DefaultReturn {
-                success: false,
-                message: String::from(res.err().unwrap().to_string()),
-                payload: Option::None,
-            };
+                // return
+                return Ok(());
+            }
+            Err(_) => return Err(LogError::Other),
         }
-
-        // update cache
-        self.base.cachedb.remove(format!("log:{}", id)).await;
-
-        // return
-        return DefaultReturn {
-            success: true,
-            message: String::from("Log deleted!"),
-            payload: Option::Some(id),
-        };
     }
 }

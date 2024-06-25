@@ -7,9 +7,9 @@ authors = ["hkau"]
 license = "MIT"
 homepage = "https://github.com/stellularorg/dorsal"
 repository = "https://github.com/stellularorg/dorsal"
-documentation = "https://github.com/stellularorg/dorsal"
+documentation = "https://docs.rs/dorsal"
 
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 
 exclude = ["dorsal_example/*"]

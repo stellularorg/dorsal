@@ -1,4 +1,4 @@
-use super::log_db::Log;
+use super::log_db::{Log, LogError, Result as LogResult};
 use crate::{AuthDatabase, DefaultReturn, LogDatabase, StarterDatabase};
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +9,38 @@ pub struct Notification {
     pub content: String, // notification text
     pub address: String, // notification redirect url
 }
+
+// ...
+/// Notification database errors
+#[derive(Debug)]
+pub enum NotificationError {
+    ValueError,
+    NotFound,
+    Other,
+}
+
+impl NotificationError {
+    pub fn to_string(&self) -> String {
+        use NotificationError::*;
+        match self {
+            ValueError => String::from("One of the field values given is invalid."),
+            NotFound => String::from("No asset with this selector could be found."),
+            _ => String::from("An unspecified error has occured"),
+        }
+    }
+}
+
+impl<T: Default> Into<DefaultReturn<T>> for NotificationError {
+    fn into(self) -> DefaultReturn<T> {
+        DefaultReturn {
+            success: false,
+            message: self.to_string(),
+            payload: T::default(),
+        }
+    }
+}
+
+pub type Result<T> = std::result::Result<T, NotificationError>;
 
 // database
 #[derive(Clone)]
@@ -38,7 +70,7 @@ impl NotificationDatabase {
         &self,
         user: String,
         offset: Option<i32>,
-    ) -> DefaultReturn<Option<Vec<Log>>> {
+    ) -> Result<Vec<Log>> {
         let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
             "SELECT * FROM \"Logs\" WHERE \"content\" LIKE ? AND \"logtype\" = 'notification' ORDER BY \"timestamp\" DESC LIMIT 50 OFFSET ?"
         } else {
@@ -46,22 +78,17 @@ impl NotificationDatabase {
         };
 
         let c = &self.base.db.client;
-        let res = sqlx::query(query)
+        let rows = match sqlx::query(query)
             .bind::<&String>(&format!("%\"user\":\"{user}\"%"))
             .bind(if offset.is_some() { offset.unwrap() } else { 0 })
             .fetch_all(c)
-            .await;
-
-        if res.is_err() {
-            return DefaultReturn {
-                success: false,
-                message: String::from("Failed to fetch notifications"),
-                payload: Option::None,
-            };
-        }
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => return Err(NotificationError::Other),
+        };
 
         // ...
-        let rows = res.unwrap();
         let mut output: Vec<Log> = Vec::new();
 
         for row in rows {
@@ -75,18 +102,14 @@ impl NotificationDatabase {
         }
 
         // return
-        return DefaultReturn {
-            success: true,
-            message: String::from("Notifications exist"),
-            payload: Option::Some(output),
-        };
+        Ok(output)
     }
 
     /// Check if the given `user` has an active notification
     ///
     /// # Arguments:
     /// * `user` - username of user to check
-    pub async fn user_has_notification(&self, user: String) -> DefaultReturn<Option<Vec<Log>>> {
+    pub async fn user_has_notification(&self, user: String) -> Result<bool> {
         let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
             "SELECT * FROM \"Logs\" WHERE \"content\" LIKE ? AND \"logtype\" = 'notification' LIMIT 1"
         } else {
@@ -94,36 +117,14 @@ impl NotificationDatabase {
         };
 
         let c = &self.base.db.client;
-        let res = sqlx::query(query)
+        match sqlx::query(query)
             .bind::<&String>(&format!("%\"user\":\"{user}\"%"))
-            .fetch_all(c)
-            .await;
-
-        if res.is_err() {
-            return DefaultReturn {
-                success: false,
-                message: String::from("Failed to fetch notification"),
-                payload: Option::None,
-            };
+            .fetch_one(c)
+            .await
+        {
+            Ok(_) => Ok(false),
+            Err(_) => Ok(true),
         }
-
-        // ...
-        let rows = res.unwrap();
-
-        if rows.len() == 0 {
-            return DefaultReturn {
-                success: true,
-                message: String::from("No"),
-                payload: Option::None,
-            };
-        }
-
-        // return
-        return DefaultReturn {
-            success: true,
-            message: String::from("Yes"),
-            payload: Option::None,
-        };
     }
 
     // SET
@@ -131,22 +132,13 @@ impl NotificationDatabase {
     ///
     /// # Arguments:
     /// * `props` - [`Notification`]
-    pub async fn push_user_notification(
-        &self,
-        props: &mut Notification,
-    ) -> DefaultReturn<Option<String>> {
+    pub async fn push_user_notification(&self, props: &mut Notification) -> LogResult<()> {
         let p: &mut Notification = props; // borrowed props
 
         // make sure user exists
         match self.auth.get_user_by_username(p.user.to_owned()).await {
             Ok(ua) => ua,
-            Err(err) => {
-                return DefaultReturn {
-                    success: false,
-                    message: err.to_string(),
-                    payload: Option::None,
-                }
-            }
+            Err(_) => return Err(LogError::Other),
         };
 
         // return
