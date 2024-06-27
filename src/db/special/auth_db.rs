@@ -101,10 +101,25 @@ pub type Result<T> = std::result::Result<T, AuthError>;
 // ...
 #[derive(Clone)]
 pub struct DatabaseOptions {
-    /// The table to for database operations
+    /// The table to use for database operations
     pub table: String,
     /// Table used for logs operations
     pub logs_table: String,
+    /// The prefix used in redis keys
+    pub prefix: String,
+    /// The prefix used for log redis keys (levels only)
+    pub logs_prefix: String,
+}
+
+impl Default for DatabaseOptions {
+    fn default() -> Self {
+        Self {
+            table: String::from("Users"),
+            logs_table: String::from("Logs"),
+            prefix: String::from("user"),
+            logs_prefix: String::from("level"),
+        }
+    }
 }
 
 // database
@@ -262,7 +277,11 @@ impl AuthDatabase {
     /// * `username` - `String` of the user's username
     pub async fn get_user_by_username(&self, username: String) -> Result<FullUser<UserMetadata>> {
         // check in cache
-        let cached = self.base.cachedb.get(format!("user:{}", username)).await;
+        let cached = self
+            .base
+            .cachedb
+            .get(format!("{}:{}", self.options.prefix, username))
+            .await;
 
         if cached.is_some() {
             // ...
@@ -335,7 +354,7 @@ impl AuthDatabase {
         self.base
             .cachedb
             .set(
-                format!("user:{}", username),
+                format!("{}:{}", self.options.prefix, username),
                 serde_json::to_string::<UserState<UserMetadata>>(&user).unwrap(),
             )
             .await;
@@ -353,7 +372,11 @@ impl AuthDatabase {
     /// * `name` - `String` of the level's role name
     pub async fn get_level_by_role(&self, name: String) -> RoleLevelLog {
         // check if level already exists in cache
-        let cached = self.base.cachedb.get(format!("level:{}", name)).await;
+        let cached = self
+            .base
+            .cachedb
+            .get(format!("{}:{}", self.options.logs_prefix, name))
+            .await;
 
         if cached.is_some() {
             return serde_json::from_str::<RoleLevelLog>(cached.unwrap().as_str()).unwrap();
@@ -393,7 +416,7 @@ impl AuthDatabase {
         self.base
             .cachedb
             .set(
-                format!("level:{}", name),
+                format!("{}:{}", self.options.logs_prefix, name),
                 serde_json::to_string::<RoleLevelLog>(&level).unwrap(),
             )
             .await;

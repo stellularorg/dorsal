@@ -52,8 +52,10 @@ pub type Result<T> = std::result::Result<T, LogError>;
 // ...
 #[derive(Clone)]
 pub struct DatabaseOptions {
-    /// The table to for database operations
+    /// The table to use for database operations
     pub table: String,
+    /// The prefix used in redis keys
+    pub prefix: String,
 }
 
 // database
@@ -77,7 +79,11 @@ impl LogDatabase {
     /// * `id` - `String` of the log's `id`
     pub async fn get_log_by_id(&self, id: String) -> Result<Log> {
         // check in cache
-        let cached = self.base.cachedb.get(format!("log:{}", id)).await;
+        let cached = self
+            .base
+            .cachedb
+            .get(format!("{}:{}", self.options.prefix, id))
+            .await;
 
         if cached.is_some() {
             // ...
@@ -111,7 +117,7 @@ impl LogDatabase {
         self.base
             .cachedb
             .set(
-                format!("log:{}", id),
+                format!("{}:{}", self.options.prefix, id),
                 serde_json::to_string::<Log>(&log).unwrap(),
             )
             .await;
@@ -185,7 +191,10 @@ impl LogDatabase {
         {
             Ok(_) => {
                 // update cache
-                self.base.cachedb.remove(format!("log:{}", id)).await;
+                self.base
+                    .cachedb
+                    .remove(format!("{}:{}", self.options.prefix, id))
+                    .await;
 
                 // return
                 Ok(())
@@ -215,7 +224,10 @@ impl LogDatabase {
         match sqlx::query(&query).bind::<&String>(&id).execute(c).await {
             Ok(_) => {
                 // update cache
-                self.base.cachedb.remove(format!("log:{}", id)).await;
+                self.base
+                    .cachedb
+                    .remove(format!("{}:{}", self.options.prefix, id))
+                    .await;
 
                 // return
                 return Ok(());
