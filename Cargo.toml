@@ -9,7 +9,7 @@ homepage = "https://github.com/stellularorg/dorsal"
 repository = "https://github.com/stellularorg/dorsal"
 documentation = "https://docs.rs/dorsal"
 
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 
 exclude = ["dorsal_example/*"]

@@ -98,15 +98,25 @@ impl<T: Default> Into<DefaultReturn<T>> for AuthError {
 
 pub type Result<T> = std::result::Result<T, AuthError>;
 
+// ...
+#[derive(Clone)]
+pub struct DatabaseOptions {
+    /// The table to for database operations
+    pub table: String,
+    /// Table used for logs operations
+    pub logs_table: String,
+}
+
 // database
 #[derive(Clone)]
 pub struct AuthDatabase {
     pub base: StarterDatabase,
+    pub options: DatabaseOptions,
 }
 
 impl AuthDatabase {
-    pub async fn new(base: StarterDatabase) -> AuthDatabase {
-        AuthDatabase { base }
+    pub async fn new(base: StarterDatabase, options: DatabaseOptions) -> AuthDatabase {
+        AuthDatabase { base, options }
     }
 
     // users
@@ -118,14 +128,20 @@ impl AuthDatabase {
     /// * `hashed` - `String` of the user's hashed ID
     pub async fn get_user_by_hashed(&self, hashed: String) -> Result<FullUser<UserMetadata>> {
         // fetch from database
-        let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
-            "SELECT * FROM \"Users\" WHERE \"id_hashed\" = ?"
+        let query: String = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
+            format!(
+                "SELECT * FROM \"{}\" WHERE \"id_hashed\" = ?",
+                self.options.table
+            )
         } else {
-            "SELECT * FROM \"Users\" WHERE \"id_hashed\" = $1"
+            format!(
+                "SELECT * FROM \"{}\" WHERE \"id_hashed\" = $1",
+                self.options.table
+            )
         };
 
         let c = &self.base.db.client;
-        let row = match sqlx::query(query)
+        let row = match sqlx::query(&query)
             .bind::<&String>(&hashed)
             .fetch_one(c)
             .await
@@ -186,14 +202,20 @@ impl AuthDatabase {
         unhashed: String,
     ) -> Result<FullUser<UserMetadata>> {
         // fetch from database
-        let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
-            "SELECT * FROM \"Users\" WHERE \"metadata\" LIKE ?"
+        let query: String = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
+            format!(
+                "SELECT * FROM \"{}\" WHERE \"metadata\" LIKE ?",
+                self.options.table
+            )
         } else {
-            "SELECT * FROM \"Users\" WHERE \"metadata\" LIKE $1"
+            format!(
+                "SELECT * FROM \"{}\" WHERE \"metadata\" LIKE $1",
+                self.options.table
+            )
         };
 
         let c = &self.base.db.client;
-        let row = match sqlx::query(query)
+        let row = match sqlx::query(&query)
             .bind::<&String>(&format!(
                 "%\"secondary_token\":\"{}\"%",
                 crate::utility::hash(unhashed)
@@ -266,14 +288,20 @@ impl AuthDatabase {
         }
 
         // ...
-        let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
-            "SELECT * FROM \"Users\" WHERE \"username\" = ?"
+        let query: String = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
+            format!(
+                "SELECT * FROM \"{}\" WHERE \"username\" = ?",
+                self.options.table
+            )
         } else {
-            "SELECT * FROM \"Users\" WHERE \"username\" = $1"
+            format!(
+                "SELECT * FROM \"{}\" WHERE \"username\" = $1",
+                self.options.table
+            )
         };
 
         let c = &self.base.db.client;
-        let row = match sqlx::query(query)
+        let row = match sqlx::query(&query)
             .bind::<&String>(&username)
             .fetch_one(c)
             .await
@@ -332,14 +360,20 @@ impl AuthDatabase {
         }
 
         // ...
-        let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
-            "SELECT * FROM \"Logs\" WHERE \"logtype\" = 'level' AND \"content\" LIKE ?"
+        let query: String = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
+            format!(
+                "SELECT * FROM \"{}\" WHERE \"logtype\" = 'level' AND \"content\" LIKE ?",
+                self.options.logs_table
+            )
         } else {
-            "SELECT * FROM \"Logs\" WHERE \"logtype\" = 'level' AND \"content\" LIKE $1"
+            format!(
+                "SELECT * FROM \"{}\" WHERE \"logtype\" = 'level' AND \"content\" LIKE $1",
+                self.options.logs_table
+            )
         };
 
         let c = &self.base.db.client;
-        let row = match sqlx::query(query)
+        let row = match sqlx::query(&query)
             .bind::<&String>(&format!("%\"name\":\"{}\"%", name))
             .fetch_one(c)
             .await

@@ -49,15 +49,23 @@ impl<T: Default> Into<DefaultReturn<T>> for LogError {
 
 pub type Result<T> = std::result::Result<T, LogError>;
 
+// ...
+#[derive(Clone)]
+pub struct DatabaseOptions {
+    /// The table to for database operations
+    pub table: String,
+}
+
 // database
 #[derive(Clone)]
 pub struct LogDatabase {
     pub base: StarterDatabase,
+    pub options: DatabaseOptions,
 }
 
 impl LogDatabase {
-    pub async fn new(base: StarterDatabase) -> LogDatabase {
-        LogDatabase { base }
+    pub async fn new(base: StarterDatabase, options: DatabaseOptions) -> LogDatabase {
+        LogDatabase { base, options }
     }
 
     // logs
@@ -80,14 +88,14 @@ impl LogDatabase {
         }
 
         // ...
-        let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
-            "SELECT * FROM \"Logs\" WHERE \"id\" = ?"
+        let query: String = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
+            format!("SELECT * FROM \"{}\" WHERE \"id\" = ?", self.options.table)
         } else {
-            "SELECT * FROM \"Logs\" WHERE \"id\" = $1"
+            format!("SELECT * FROM \"{}\" WHERE \"id\" = $1", self.options.table)
         };
 
         let c = &self.base.db.client;
-        let row = match sqlx::query(query).bind::<&String>(&id).fetch_one(c).await {
+        let row = match sqlx::query(&query).bind::<&String>(&id).fetch_one(c).await {
             Ok(r) => self.base.textify_row(r).data,
             Err(_) => return Err(LogError::Other),
         };
@@ -119,16 +127,19 @@ impl LogDatabase {
     /// * `logtype` - `String` of the log's `logtype`
     /// * `content` - `String` of the log's `content`
     pub async fn create_log(&self, logtype: String, content: String) -> Result<()> {
-        let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
-            "INSERT INTO \"Logs\" VALUES (?, ?, ?, ?)"
+        let query: String = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
+            format!("INSERT INTO \"{}\" VALUES (?, ?, ?, ?)", self.options.table)
         } else {
-            "INSERT INTO \"Logs\" VALUES ($1, $2, $3, $4)"
+            format!(
+                "INSERT INTO \"{}\" VALUES ($1, $2, $3, $4)",
+                self.options.table
+            )
         };
 
         let log_id: String = utility::random_id();
 
         let c = &self.base.db.client;
-        match sqlx::query(query)
+        match sqlx::query(&query)
             .bind::<&String>(&log_id)
             .bind::<String>(logtype)
             .bind::<String>(utility::unix_epoch_timestamp().to_string())
@@ -153,14 +164,20 @@ impl LogDatabase {
         }
 
         // update log
-        let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
-            "UPDATE \"Logs\" SET \"content\" = ? WHERE \"id\" = ?"
+        let query: String = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
+            format!(
+                "UPDATE \"{}\" SET \"content\" = ? WHERE \"id\" = ?",
+                self.options.table
+            )
         } else {
-            "UPDATE \"Logs\" SET (\"content\") = ($1) WHERE \"id\" = $2"
+            format!(
+                "UPDATE \"{}\" SET (\"content\") = ($1) WHERE \"id\" = $2",
+                self.options.table
+            )
         };
 
         let c = &self.base.db.client;
-        match sqlx::query(query)
+        match sqlx::query(&query)
             .bind::<&String>(&content)
             .bind::<&String>(&id)
             .execute(c)
@@ -188,14 +205,14 @@ impl LogDatabase {
         };
 
         // update log
-        let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
-            "DELETE FROM \"Logs\" WHERE \"id\" = ?"
+        let query: String = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
+            format!("DELETE FROM \"{}\" WHERE \"id\" = ?", self.options.table)
         } else {
-            "DELETE FROM \"Logs\" WHERE \"id\" = $1"
+            format!("DELETE FROM \"{}\" WHERE \"id\" = $1", self.options.table)
         };
 
         let c = &self.base.db.client;
-        match sqlx::query(query).bind::<&String>(&id).execute(c).await {
+        match sqlx::query(&query).bind::<&String>(&id).execute(c).await {
             Ok(_) => {
                 // update cache
                 self.base.cachedb.remove(format!("log:{}", id)).await;

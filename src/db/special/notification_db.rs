@@ -71,14 +71,14 @@ impl NotificationDatabase {
         user: String,
         offset: Option<i32>,
     ) -> Result<Vec<Log>> {
-        let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
-            "SELECT * FROM \"Logs\" WHERE \"content\" LIKE ? AND \"logtype\" = 'notification' ORDER BY \"timestamp\" DESC LIMIT 50 OFFSET ?"
+        let query: String = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
+            format!("SELECT * FROM \"{}\" WHERE \"content\" LIKE ? AND \"logtype\" = 'notification' ORDER BY \"timestamp\" DESC LIMIT 50 OFFSET ?", self.logs.options.table)
         } else {
-            "SELECT * FROM \"Logs\" WHERE \"content\" LIKE $1 AND \"logtype\" = 'notification' ORDER BY \"timestamp\" DESC LIMIT 50 OFFSET $2"
+            format!("SELECT * FROM \"{}\" WHERE \"content\" LIKE $1 AND \"logtype\" = 'notification' ORDER BY \"timestamp\" DESC LIMIT 50 OFFSET $2", self.logs.options.table)
         };
 
         let c = &self.base.db.client;
-        let rows = match sqlx::query(query)
+        let rows = match sqlx::query(&query)
             .bind::<&String>(&format!("%\"user\":\"{user}\"%"))
             .bind(if offset.is_some() { offset.unwrap() } else { 0 })
             .fetch_all(c)
@@ -110,14 +110,14 @@ impl NotificationDatabase {
     /// # Arguments:
     /// * `user` - username of user to check
     pub async fn user_has_notification(&self, user: String) -> Result<bool> {
-        let query: &str = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
-            "SELECT * FROM \"Logs\" WHERE \"content\" LIKE ? AND \"logtype\" = 'notification' LIMIT 1"
+        let query: String = if (self.base.db._type == "sqlite") | (self.base.db._type == "mysql") {
+            format!("SELECT * FROM \"{}\" WHERE \"content\" LIKE ? AND \"logtype\" = 'notification' LIMIT 1", self.logs.options.table)
         } else {
-            "SELECT * FROM \"Logs\" WHERE \"content\" LIKE $1 AND \"logtype\" = 'notification' LIMIT 1"
+            format!("SELECT * FROM \"{}\" WHERE \"content\" LIKE $1 AND \"logtype\" = 'notification' LIMIT 1", self.logs.options.table)
         };
 
         let c = &self.base.db.client;
-        match sqlx::query(query)
+        match sqlx::query(&query)
             .bind::<&String>(&format!("%\"user\":\"{user}\"%"))
             .fetch_one(c)
             .await
